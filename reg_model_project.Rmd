@@ -1,0 +1,335 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(corrplot)
+```
+
+### Load data
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+The "movies" data set contains 651 randomly sampled movies released before 2016. Since the data has been filled out voluntarily by the audience and critics [**no random assignment**], the analysis is **observational and not experimental**. The non-experimental analysis **precludes causal inferences** and the random sampling process implies the results can be **generalized** to the complete population of movies released before 2016.
+
+The final conclusion will only include an association relationship between the variables and these cannot be inferred not have a causal relationship.
+
+* * *
+
+## Part 2: Research question
+
+The prinicipal parameter we are concerned with is the **"imdb_rating"** and it's relationship with the other parameters of the data set. The main reason we are concerned with the imdb rating is that various film and media executives will be interested in understanding how the audience assess each film as this will directly translate to higher box office collections. The better the imdb rating, the more the public will be willing to spend for the film ticket resulting in high box office collections.
+
+The main variables that we will be interested in for the prediction of the imdb rating are 
+
+i) genre: Genre for the film
+ii) title_type: Type of movie (Documentary, Feature Film or TV Movie)
+iii) critics_rating: Critics rating for the film
+iv) critics_score: The score awarded for the film by each critic
+v) runtime: The runtime of the film
+vi) mpaa_rating: MPAA rating for the film
+vii) best_dir_win: Whether the director has won an award for a film before
+
+The analysis will revolve around identifying the significant predictors for reliable predictions among the aforementioned variables. Since we are interested in more predictive power, the assessment of the model will be carried out using the **Adjusted R-squared** method.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+The first step before performing any exploratory analysis is to subset the parameters of interest.
+```{r}
+movie_data = movies %>% select(imdb_rating,genre,title_type,critics_rating,critics_score,
+                               runtime,mpaa_rating,best_dir_win)
+```
+
+Let's have a glimpse of the data set.
+```{r}
+str(movie_data)
+summary(movie_data)
+```
+
+The rows in the "movie_data" that contain "NA" values have to be identified and removed or modified as they will disrupt the model building and exploratory analysis.
+
+```{r}
+movies[rowSums(is.na(movie_data)) > 0, 1:4]
+```
+
+The documentary titled 'The End of America' has a runtime = NA which needs to be modified. 
+The average runtime of all documentary films are evaluated and substituted for the runtime of the documentary "The End of America".
+
+```{r}
+movie_data[is.na(movie_data$runtime),]$runtime = mean(movie_data[movie_data$genre == 'Documentary',]$runtime, na.rm = TRUE)
+mean(movie_data[movie_data$genre == 'Documentary',]$runtime, na.rm = TRUE)
+```
+ 
+**Correlation Plot and Matrix**
+
+The correlation matrix is evaluated and plotted for 2 reasons:
+i) Identify the numerical variables highly correlated with "imdb_rating" using a correlation matrix.
+ii) Identify if the explanatory variables are exhibiting collinearity among each other
+```{r}
+matrix = cor(movie_data %>% select(imdb_rating,critics_score,runtime))
+matrix
+corrplot(matrix)
+```
+
+The following can be observed from the above calculations and plot.
+
+i) The numerical explanatory variables (critics score and runtime) do not exhibit any collinearity as the correlation value between the 2 variables is equal to **0.17**.
+ii) The critics score has a high correlation (**0.76**) with the imdb rating and might be a major influence in determining the imdb_rating.
+
+
+**Firstly**, let's plot a scatterchart between the **imdb rating** and the **critic's score** and check if a linear relationship exists visually. Moreover, lets plot a linear regression line to see the trend between the 2 variables.
+```{r}
+ggplot(data = movie_data, aes(x = critics_score, y = imdb_rating)) + geom_point() + geom_smooth(method = 'lm') + labs(x = "Critic's Score", y = 'IMDB Rating',title = "IMDB Rating vs Critic's Score")
+```
+
+The plot clearly hints at a **strong linear association** between the 2 variables. So the inclusion of the critic's score in the model as an explanatory variable is justified.
+
+**Secondly**, let' examine the association between a **categorical variable [critics rating]** and a **numerical variable [imdb rating]**. Since the critic's rating is quantitative and the imdb rating is numerical, a boxplot is used to compare the imdb rating at various levels.
+
+```{r}
+
+ggplot(data = movie_data, aes(x = critics_rating, y = imdb_rating)) + geom_boxplot() + labs(x = "Critic's Rating", y = "IMDB Rating", title = "IMDB Rating vs Critic's Rating")
+
+```
+
+The box plot visually manifests the **decrease** in the average IMDB ratings as the critic's rating moves from "Certified Fresh" to "Rotten". This implies that the critic's rating has an assocaiation with the final imdb rating. 
+
+The strong association does not conclude a linear relationship between the 2 variables. All that we can confirm is that there exists an association but we cannot conclude that this relationship is linear. This can be confirmed only by constructing the multiple linear regression model. Hence, we include this variable in the final model.
+
+
+* * *
+
+## Part 4: Modeling
+
+Since the research question deals with identifying the factors associated with the **"IMDB rating"**, we will be building a **multiple linear regression model** using the following 7 variables as explanatory variables and the **imdb_rating** as the response variable.
+
+i) genre: The reason for including this variable in the model is that audience's rating vary genre-wise. Some people love action, whereas other prefer no violence in the film.
+ii) title_type: Similar to the reason mentioned above, some people prefer documentary, others prefer films.
+iii) critics_rating: The rating of the critics can influence the rating of the audience to watch the film and give a similar rating.
+iv) critics_score: Similar to the reason mentioned above.
+v) runtime: Audience generally prefer a short running time and give a better rating if the movie is not long
+vi) mpaa_rating: Individuals perception change for differently rated films. Some people rate less when there is too much violence or sex in the film [R-rated].
+vii) best_dir_win: The audience might rate highly for a film that has an academy award winning director.
+ 
+The following variables have been excluded from the final analysis due to the mentioned reason:
+
+i) title: Since the title does not affect the imdb rating, it has been excluded
+ii) studio: This categorical variable has 211 levels which will make it nearly impossible to build a multiple linear regression model
+iii) thtr_rel_year, month, day: The release date of the movie theatrically does not influence the rating of the audience
+iv) dvd_rel_year, month, day: The dvd release date of the movie does not influence the rating of the audience
+v) imdb_num_votes: This has been specifically removed because we are trying to predict the imdb ratings beforehand which means that the imdb number of votes will be unavailable.
+vi) audience_score: This variable is determined by the audience who also determine the imdb rating due to which this variable is excluded from the final analysis.
+vii) best_pic_nom, win: These values are determined after the release of the film due to which they have been excluded.
+viii) director, actor_1 to actor_5: The names of the actors and directors do not influence audience's rating on IMDB.
+ix) URL: The links of the websites do not affect the ratings of the audience
+
+
+Using multiple linear regression, let's fit a linear model with the aforementioned 7 explanatory variables.
+```{r}
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + runtime + mpaa_rating + best_dir_win, data = movie_data)
+summary(mult_imdb)
+x = summary(mult_imdb)$adj.r.squared
+```
+
+To arrive at a parsimonious model, a **backward elimination** method is implemented.The reason for picking a backward elimination method is that the number of explanatory variables are large so it will much more computationally intensive to implement a forward selection method.
+
+Since we are interested in a better predictive model, **adjusted R-squared** is used to assess the model. The following steps are followed in attaining the parsimonious model using backward elimination.
+
+i) The initial adjusted R-squared is noted down with all 7 explanatory variables in the model.
+ii) Each variable is dropped one by one and the adjusted R-squared is calcualted.
+iii) The model with highest increase in the adjusted R-squared is selected.
+iv) The above steps are repeated until there is no increase in the adjusted R-squared.
+
+```{r}
+# Remove best_dir_win
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + runtime + mpaa_rating, data = movie_data)
+x1 = summary(mult_imdb)$adj.r.squared
+
+# Remove mpaa_rating
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + runtime + best_dir_win, data = movie_data)
+x2 = summary(mult_imdb)$adj.r.squared
+
+# Remove runtime
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + mpaa_rating + best_dir_win, data = movie_data)
+x3 = summary(mult_imdb)$adj.r.squared
+
+# Remove critics_score
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + runtime + mpaa_rating + best_dir_win, data = movie_data)
+x4 = summary(mult_imdb)$adj.r.squared
+
+# Remove critics_rating
+mult_imdb = lm(imdb_rating~genre + title_type + critics_score + runtime + mpaa_rating + best_dir_win, data = movie_data)
+x5 = summary(mult_imdb)$adj.r.squared
+
+
+# Remove title_type
+mult_imdb = lm(imdb_rating~genre + critics_rating + critics_score + runtime + mpaa_rating + best_dir_win, data = movie_data)
+x6 = summary(mult_imdb)$adj.r.squared
+
+
+# Remove genre
+mult_imdb = lm(imdb_rating~title_type + critics_rating + critics_score + runtime + mpaa_rating + best_dir_win, data = movie_data)
+x7 = summary(mult_imdb)$adj.r.squared
+
+final = data.frame( parameter = c('original','best_dir_win','mpaa_rating','runtime','critics_score','critics_rating','title_type','genre'), adjusted_r2 = c(x,x1,x2,x3,x4,x5,x6,x7))
+
+final
+```
+
+
+From the above analysis, it can be clearly seen that removing the **'best_dir_win'** variable increases the adjusted R-Squared. Now the entire process is repeated to see if the removal of any variable increases the adjusted R-squared.
+
+
+```{r}
+
+# Original Model [without best_dir_win]
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + runtime + mpaa_rating, data = movie_data)
+x = summary(mult_imdb)$adj.r.squared
+
+# Remove mpaa_rating
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + runtime, data = movie_data)
+x1 = summary(mult_imdb)$adj.r.squared
+
+# Remove runtime
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + mpaa_rating, data = movie_data)
+x2 = summary(mult_imdb)$adj.r.squared
+
+# Remove critics_score
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + runtime + mpaa_rating, data = movie_data)
+x3 = summary(mult_imdb)$adj.r.squared
+
+# Remove critics_rating
+mult_imdb = lm(imdb_rating~genre + title_type + critics_score + runtime + mpaa_rating, data = movie_data)
+x4 = summary(mult_imdb)$adj.r.squared
+
+
+# Remove title_type
+mult_imdb = lm(imdb_rating~genre + critics_rating + critics_score + runtime + mpaa_rating, data = movie_data)
+x5 = summary(mult_imdb)$adj.r.squared
+
+
+# Remove genre
+mult_imdb = lm(imdb_rating~title_type + critics_rating + critics_score + runtime + mpaa_rating, data = movie_data)
+x6 = summary(mult_imdb)$adj.r.squared
+
+final = data.frame( parameter = c('original','mpaa_rating','runtime','critics_score','critics_rating','title_type','genre'), adjusted_r2 = c(x,x1,x2,x3,x4,x5,x6))
+
+final
+
+```
+
+Since there is no increase in the adjusted r-squared value, the above mentioned 6 variables in the "final" data frame are fixed for the regression model and no more modifications are made.
+
+The final multiple linear regression model with the 6 explanatory variables - **mpaa_rating**, **runtime**, **critics_score**, **critics_rating**, **title_type**, **genre** is given below:
+
+```{r}
+mult_imdb = lm(imdb_rating~genre + title_type + critics_rating + critics_score + runtime + mpaa_rating, data = movie_data)
+summary(mult_imdb)
+```
+
+### Interpretation of Coefficients and Intercept: ###
+
+The following can be inferred from the final multiple linear regression model:
+
+i) **Intercept:** When the information for none of the variables are available, the model predicts the imdb rating to be **3.89** on an average. 
+ii) **Genre - Estimate**: The genre **'Documentary'** has a high slope estimate of 0.68 and a less p-value making it a significant predictor. So keeping all variables constant, a movie in this particular genre will increase the rating on IMDB by **0.68**. Whereas a movie in the genre of 'Animation' and 'Horror' will decrease the rating by **0.26** and **0.2** [But these variables are not significant]
+iii) **Critics_rating rotten - Estimate**: This categorical variable also has a high estimate and a less p-value. Surprisingly, a film rated rotten by a critic, keeping all other variables constant, increases the imdb rating by **0.255**.
+iv) **Crtitics_Score**: THis variable is one of the most significant predictors as it has the lowest p-value among all the variables. This result was expected as the exploratory analysis conducted by calculating the correlation between the critics score and the imdb rating showed a high association.
+
+Finally, the adjusted r-squared = 63.44 can be interpreted as "The explanatory variables explains 63.44% of the variability of imdb ratings".
+
+### Model Diagnostics ###
+
+Finally, the model diagnostics has to performed to check the validity of the linear regression model. The following conditions need to be checked for:
+
+**1. Nearly normal residuals with mean = 0.**
+
+```{r}
+ggplot(data = mult_imdb, aes(x=.resid)) + geom_histogram(bins = 30) + labs(x = 'Residuals', title = "Normality Condition - Mean = 0")
+```
+
+The histogram shows that the residuals are almost normal with the mean value around 0.
+
+**2. Linearity Condition**
+```{r}
+ggplot(data = mult_imdb, aes(x= movie_data$critics_score,y= .resid)) + geom_point() + labs(x = 'Critics Score', y = 'Residuals', title = "Linearity Condition") + geom_hline(yintercept =  0)
+```
+
+The linearity condition is checked for a numerical explanatory variable [here it is the critic's score] and the response variable. Since the residuals around the line are randomly scattered, the linearity condition is satisfied.
+
+**3. Constant variability**
+```{r}
+ggplot(data = mult_imdb, aes(x= .fitted,y= .resid)) + geom_point() + labs(x = 'Fitted Values', y = 'Residuals', title = "Constant Variability") + geom_hline(yintercept =  0)
+```
+
+Since the residuals around the line are randomly scattered and there are no fan shaped residual patterns visible, the constant variability condition is satisfied.
+
+**4. Independent Residuals**
+```{r}
+ggplot(data = mult_imdb, aes(y= .resid, x=c(1:651))) + geom_point() + labs(x = "Index",y = 'Residuals', title = "Independent Residuals") + geom_hline(yintercept =  0)
+```
+
+There is no pattern visible in the independent residuals plot and the residuals are randomly scattered. This shows that the residuals are independent
+
+* * *
+
+## Part 5: Prediction
+
+Using the regression model, let us predict the imdb rating for a movie released in 2016 and not present in the movie data set. The movie titled 'Arrival' starring Amy Adams and Jeremy Renner is chosen for the test prediction. A sample data point is created and the relevant details regarding the movie are entered.
+
+The actual imdb rating for the film is **7.9** and let us see how the model performs.
+```{r}
+sample = data.frame( genre = 'Science Fiction & Fantasy',title_type = 'Feature Film',critics_rating = 'Certified Fresh',critics_score = 94, runtime = 118, mpaa_rating = "PG-13")
+
+predict(mult_imdb,sample)
+```
+
+The model prediction for the imdb rating = **7.1** is surprisingly close enough to the original value = **7.9**. Let us see whether the original value lies in the prediction interval.
+
+```{r}
+predict(mult_imdb,sample, interval = 'predict')
+```
+
+As expected the original value = **7.9** lies in the prediction interval = **(5.7,8.4)**. The prediction interval gives the uncertainty around the predicted value **(7.1)**. This means that we are 95% confident that the predicted imdb rating will lie in the interval - **(5.7,8.4)**.
+
+**Reference**:
+
+1) https://www.rottentomatoes.com/m/arrival_2016 
+2) https://www.imdb.com/title/tt2543164/
+
+* * *
+
+## Part 6: Conclusion
+
+The above analysis shows that using the 6 aforementioned explanatory variables in a multiple linear regression model it is possible to predict the imdb rating of the film with some uncertainty. Using the above analysis, we identified certain variables such as the **Genre - documentary, critic's score and critics rating** to be significant variables in predicting the imdb rating.
+
+Future film company executives and filmmakers can take into consideration the above mentioned significant predictor variables before deciding on a film. These parameters can be used to determine the imdb rating which has a strong correlation with the box office collections.
+
+There are some shortcomings with this analysis.
+
+i) The data does not contain the entire population of movies and their relevant information. 
+ii) The data set has information filled out voluntarily and not experimental due to which the analysis is not causal, so we cannot establish a definite relationship between the variables.
+iii) More relevant information can be included int the "movies" data set like the budget of the film which can influence many other parameters in the data set.
+iv) Some parameters might have a non-linear relationship with the response variable which are not accounted for in the model.
